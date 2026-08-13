@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import az.simplesoft.speakapro.audio.AudioPlayer
 import az.simplesoft.speakapro.audio.AudioRecorder
+import az.simplesoft.speakapro.audio.AudioRouter
 import az.simplesoft.speakapro.live.GeminiLiveClient
 import az.simplesoft.speakapro.ui.LanguageOption
 import az.simplesoft.speakapro.ui.TranslatorScreen
@@ -22,6 +23,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            val router = remember { AudioRouter(this) }
             val languages = remember { listOf(
                 LanguageOption("ru", "Русский", "🇷🇺"),
                 LanguageOption("en", "English", "🇬🇧"),
@@ -35,6 +37,7 @@ class MainActivity : ComponentActivity() {
             var input by remember { mutableStateOf("") }
             var output by remember { mutableStateOf("") }
             var message by remember { mutableStateOf<String?>(null) }
+            var route by remember { mutableStateOf(router.state()) }
 
             fun stopAll() {
                 recorder.stop(); live?.close(); live = null; player.stop()
@@ -43,12 +46,13 @@ class MainActivity : ComponentActivity() {
 
             fun begin() {
                 if (BuildConfig.GEMINI_API_KEY.isBlank()) { message = "Добавь GEMINI_API_KEY в local.properties"; return }
-                message = null; listening = true; frames = 0; input = ""; output = ""
+                route = router.state(); message = null; listening = true; frames = 0; input = ""; output = ""
                 val events = object : GeminiLiveClient.Events {
                     override fun ready() = runOnUiThread {
                         try {
-                            player.start()
+                            player.start(router.preferredOutput())
                             recorder.start(
+                                preferredDevice = router.preferredInput(),
                                 onFrame = { frame -> live?.sendAudio(frame.pcm16le); runOnUiThread { level = frame.level; frames++ } },
                                 onError = { problem -> runOnUiThread { message = problem.message ?: "Ошибка микрофона"; stopAll() } }
                             )
@@ -76,8 +80,8 @@ class MainActivity : ComponentActivity() {
                 outputText = output,
                 selectedLanguage = selected,
                 languages = languages,
-                outputDeviceLabel = "Аудиовыход Android",
-                headphonesConnected = false,
+                outputDeviceLabel = route.label,
+                headphonesConnected = route.headphonesConnected,
                 error = message,
                 onLanguageSelected = { if (!listening) selected = it },
                 onToggleListening = {
