@@ -1,6 +1,7 @@
 package az.simplesoft.speakapro.audio
 
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
@@ -12,7 +13,7 @@ class AudioPlayer {
 
     private var track: AudioTrack? = null
 
-    fun start() {
+    fun start(preferredDevice: AudioDeviceInfo? = null) {
         if (track != null) return
 
         val minBuffer = AudioTrack.getMinBufferSize(
@@ -42,8 +43,13 @@ class AudioPlayer {
             "AudioTrack initialization failed"
         }
 
+        preferredDevice?.let(newTrack::setPreferredDevice)
         newTrack.play()
         track = newTrack
+    }
+
+    fun routeTo(device: AudioDeviceInfo?) {
+        track?.setPreferredDevice(device)
     }
 
     fun write(pcm16le: ByteArray): Int {
