@@ -13,11 +13,15 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import az.simplesoft.speakapro.audio.AudioPlayer
 import az.simplesoft.speakapro.audio.AudioRecorder
+import az.simplesoft.speakapro.live.GeminiLiveClient
 import az.simplesoft.speakapro.ui.TranslatorScreen
 
 class MainActivity : ComponentActivity() {
     private val recorder = AudioRecorder()
+    private val player = AudioPlayer()
+    private var live: GeminiLiveClient? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,19 +31,76 @@ class MainActivity : ComponentActivity() {
             var frames by remember { mutableLongStateOf(0L) }
             var message by remember { mutableStateOf<String?>(null) }
 
+            fun stopAll() {
+                recorder.stop()
+                live?.close()
+                live = null
+                player.stop()
+                listening = false
+                level = 0f
+            }
+
             fun begin() {
+                if (BuildConfig.GEMINI_API_KEY.isBlank()) {
+                    message = "Добавь GEMINI_API_KEY в local.properties"
+                    return
+                }
+
                 message = null
-                recorder.start(
-                    onFrame = { frame -> runOnUiThread {
-                        level = frame.level
-                        frames += 1
-                    } },
-                    onError = { problem -> runOnUiThread {
-                        listening = false
-                        message = problem.message
-                    } },
-                )
                 listening = true
+                frames = 0
+
+                val events = object : GeminiLiveClient.Events {
+                    override fun ready() {
+                        runOnUiThread {
+                            try {
+                                player.start()
+                                recorder.start(
+                                    onFrame = { frame ->
+                                        live?.sendAudio(frame.pcm16le)
+                                        runOnUiThread {
+                                            level = frame.level
+                                            frames += 1
+                                        }
+                                    },
+                                    onError = { problem -> runOnUiThread {
+                                        message = problem.message ?: "Ошибка микрофона"
+                                        stopAll()
+                                    } },
+                                )
+                            } catch (t: Throwable) {
+                                message = t.message ?: "Не удалось запустить аудио"
+                                stopAll()
+                            }
+                        }
+                    }
+
+                    override fun audio(bytes: ByteArray) {
+                        player.write(bytes)
+                    }
+
+                    override fun inputText(text: String) = Unit
+                    override fun outputText(text: String) = Unit
+
+                    override fun error(messageText: String) {
+                        runOnUiThread {
+                            message = messageText
+                            stopAll()
+                        }
+                    }
+
+                    override fun closed() {
+                        runOnUiThread {
+                            if (listening) stopAll()
+                        }
+                    }
+                }
+
+                live = GeminiLiveClient(
+                    apiKey = BuildConfig.GEMINI_API_KEY,
+                    targetLanguage = "ru",
+                    events = events,
+                ).also { it.connect() }
             }
 
             val askForMic = rememberLauncherForActivityResult(
@@ -55,9 +116,7 @@ class MainActivity : ComponentActivity() {
                 error = message,
                 onToggleListening = {
                     if (listening) {
-                        recorder.stop()
-                        listening = false
-                        level = 0f
+                        stopAll()
                     } else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                         begin()
                     } else {
@@ -70,6 +129,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         recorder.stop()
+        live?.close()
+        player.stop()
         super.onDestroy()
     }
 }
