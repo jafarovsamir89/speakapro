@@ -39,6 +39,17 @@ class MainActivity : ComponentActivity() {
             var message by remember { mutableStateOf<String?>(null) }
             var route by remember { mutableStateOf(router.state()) }
 
+            fun refreshRoute() {
+                route = router.state()
+                if (listening) {
+                    recorder.routeTo(router.preferredInput())
+                    player.routeTo(router.preferredOutput())
+                }
+            }
+            DisposableEffect(Unit) {
+                val callback = router.register { runOnUiThread { refreshRoute() } }
+                onDispose { router.unregister(callback) }
+            }
             fun stopAll() {
                 recorder.stop(); live?.close(); live = null; player.stop()
                 listening = false; level = 0f
@@ -46,7 +57,7 @@ class MainActivity : ComponentActivity() {
 
             fun begin() {
                 if (BuildConfig.GEMINI_API_KEY.isBlank()) { message = "Добавь GEMINI_API_KEY в local.properties"; return }
-                route = router.state(); message = null; listening = true; frames = 0; input = ""; output = ""
+                refreshRoute(); message = null; listening = true; frames = 0; input = ""; output = ""
                 val events = object : GeminiLiveClient.Events {
                     override fun ready() = runOnUiThread {
                         try {
