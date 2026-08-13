@@ -49,9 +49,16 @@ class AudioRecorder {
             "AudioRecord initialization failed"
         }
 
-        recorder = audioRecord
-        running = true
-        audioRecord.startRecording()
+        try {
+            recorder = audioRecord
+            running = true
+            audioRecord.startRecording()
+        } catch (t: Throwable) {
+            running = false
+            recorder = null
+            audioRecord.release()
+            throw t
+        }
 
         worker = thread(name = "SpeakAPro-AudioCapture", isDaemon = true) {
             val samples = ShortArray(CHUNK_SAMPLES)
