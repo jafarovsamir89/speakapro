@@ -24,7 +24,7 @@ class AudioPlayer {
 
         val newTrack = AudioTrack(
             AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                .setUsage(AudioAttributes.USAGE_ASSISTANT)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build(),
             AudioFormat.Builder()
