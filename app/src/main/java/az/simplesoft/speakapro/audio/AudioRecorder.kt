@@ -1,6 +1,7 @@
 package az.simplesoft.speakapro.audio
 
 import android.annotation.SuppressLint
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -27,7 +28,11 @@ class AudioRecorder {
     private var worker: Thread? = null
 
     @SuppressLint("MissingPermission")
-    fun start(onFrame: (AudioFrame) -> Unit, onError: (Throwable) -> Unit) {
+    fun start(
+        preferredDevice: AudioDeviceInfo? = null,
+        onFrame: (AudioFrame) -> Unit,
+        onError: (Throwable) -> Unit,
+    ) {
         if (running) return
 
         val minBuffer = AudioRecord.getMinBufferSize(
@@ -48,6 +53,8 @@ class AudioRecorder {
             audioRecord.release()
             "AudioRecord initialization failed"
         }
+
+        preferredDevice?.let(audioRecord::setPreferredDevice)
 
         try {
             recorder = audioRecord
@@ -80,6 +87,10 @@ class AudioRecorder {
                 release(audioRecord)
             }
         }
+    }
+
+    fun routeTo(device: AudioDeviceInfo?) {
+        recorder?.setPreferredDevice(device)
     }
 
     fun stop() {
