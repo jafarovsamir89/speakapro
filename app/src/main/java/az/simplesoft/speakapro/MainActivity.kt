@@ -12,7 +12,7 @@ import az.simplesoft.speakapro.audio.AudioPlayer
 import az.simplesoft.speakapro.audio.AudioRecorder
 import az.simplesoft.speakapro.audio.AudioRouter
 import az.simplesoft.speakapro.live.GeminiLiveClient
-import az.simplesoft.speakapro.ui.LanguageOption
+import az.simplesoft.speakapro.ui.SupportedLanguages
 import az.simplesoft.speakapro.ui.TranslatorScreen
 
 class MainActivity : ComponentActivity() {
@@ -24,14 +24,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val router = remember { AudioRouter(this) }
-            val languages = remember { listOf(
-                LanguageOption("ru", "Русский", "🇷🇺"),
-                LanguageOption("en", "English", "🇬🇧"),
-                LanguageOption("az", "Azərbaycan", "🇦🇿"),
-                LanguageOption("tr", "Türkçe", "🇹🇷")
-            ) }
+            val languages = remember { SupportedLanguages }
             var selected by remember { mutableStateOf(languages.first()) }
             var listening by remember { mutableStateOf(false) }
+            var status by remember { mutableStateOf("Готов к переводу") }
             var level by remember { mutableFloatStateOf(0f) }
             var frames by remember { mutableLongStateOf(0L) }
             var input by remember { mutableStateOf("") }
@@ -50,14 +46,19 @@ class MainActivity : ComponentActivity() {
                 val callback = router.register { runOnUiThread { refreshRoute() } }
                 onDispose { router.unregister(callback) }
             }
+            fun appendText(current: String, next: String): String {
+                val clean = next.trim()
+                if (clean.isBlank() || current.endsWith(clean)) return current
+                return (if (current.isBlank()) clean else "$current $clean").takeLast(700)
+            }
             fun stopAll() {
                 recorder.stop(); live?.close(); live = null; player.stop()
-                listening = false; level = 0f
+                listening = false; level = 0f; status = "Готов к переводу"
             }
 
             fun begin() {
                 if (BuildConfig.GEMINI_API_KEY.isBlank()) { message = "Добавь GEMINI_API_KEY в local.properties"; return }
-                refreshRoute(); message = null; listening = true; frames = 0; input = ""; output = ""
+                refreshRoute(); message = null; listening = true; status = "Подключаюсь…"; frames = 0; input = ""; output = ""
                 val events = object : GeminiLiveClient.Events {
                     override fun ready() = runOnUiThread {
                         try {
@@ -67,11 +68,12 @@ class MainActivity : ComponentActivity() {
                                 onFrame = { frame -> live?.sendAudio(frame.pcm16le); runOnUiThread { level = frame.level; frames++ } },
                                 onError = { problem -> runOnUiThread { message = problem.message ?: "Ошибка микрофона"; stopAll() } }
                             )
+                            status = "Слушаю…"
                         } catch (t: Throwable) { message = t.message ?: "Не удалось запустить аудио"; stopAll() }
                     }
                     override fun audio(bytes: ByteArray) { player.write(bytes) }
-                    override fun inputText(text: String) = runOnUiThread { input = text }
-                    override fun outputText(text: String) = runOnUiThread { output = text }
+                    override fun inputText(text: String) = runOnUiThread { input = appendText(input, text) }
+                    override fun outputText(text: String) = runOnUiThread { output = appendText(output, text) }
                     override fun error(messageText: String) = runOnUiThread { message = messageText; stopAll() }
                     override fun closed() = runOnUiThread { if (listening) stopAll() }
                 }
@@ -84,7 +86,7 @@ class MainActivity : ComponentActivity() {
 
             TranslatorScreen(
                 isListening = listening,
-                statusText = if (listening) "Слушаю…" else "Готов к переводу",
+                statusText = status,
                 microphoneLevel = level,
                 frameCount = frames,
                 inputText = input,
@@ -94,7 +96,7 @@ class MainActivity : ComponentActivity() {
                 outputDeviceLabel = route.label,
                 headphonesConnected = route.headphonesConnected,
                 error = message,
-                onLanguageSelected = { if (!listening) selected = it },
+                onLanguageSelected = { if (!listening) { selected = it; input = ""; output = "" } },
                 onToggleListening = {
                     if (listening) stopAll()
                     else if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) begin()
